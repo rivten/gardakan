@@ -1,9 +1,127 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
-#include <SDL_net.h>
 #include <stdio.h>
+#include <SDL_net.h>
 
 #include "rivten.h"
+
+void Server(void)
+{
+	IPaddress Address;
+	s32 ResolveHostResult = SDLNet_ResolveHost(&Address, 0, 4000);
+	if(ResolveHostResult == 0)
+	{
+		TCPsocket ServerSocket = SDLNet_TCP_Open(&Address);
+		if(ServerSocket)
+		{
+			while(true)
+			{
+				TCPsocket ClientSocket = SDLNet_TCP_Accept(ServerSocket);
+				if(ClientSocket)
+				{
+#if 1
+					IPaddress* ClientIP = SDLNet_TCP_GetPeerAddress(ClientSocket);
+					Assert(ClientIP);
+					printf("A connection was established from client IP %d on port %d.\n", 
+							ClientIP->host, ClientIP->port);
+#endif
+
+					char* Text = "Hello, sailor!";
+					u32 Length = (u32)(strlen(Text) + 1);
+					SDLNet_TCP_Send(ClientSocket, Text, Length);
+					SDLNet_TCP_Close(ClientSocket);
+				}
+			}
+			SDLNet_TCP_Close(ServerSocket);
+		}
+		else
+		{
+			printf("TCP could not open: %s", SDLNet_GetError());
+		}
+	}
+	else
+	{
+		printf("Host was not resolved: %s", SDLNet_GetError());
+	}
+}
+
+void Client(char* Host, u32 Port)
+{
+	IPaddress HostAddress;
+	s32 ResolveHostResult = SDLNet_ResolveHost(&HostAddress, Host, Port);
+	if(ResolveHostResult == 0)
+	{
+		TCPsocket ServerSocket = SDLNet_TCP_Open(&HostAddress);
+		if(ServerSocket)
+		{
+			printf("Connection to server was successful!\n");
+			SDLNet_SocketSet Sockets = SDLNet_AllocSocketSet(16);
+			if(Sockets)
+			{
+				SDLNet_TCP_AddSocket(Sockets, ServerSocket);
+				bool AuthentificationDone = false;
+				bool ChannelJoined = false;
+				while(true)
+				{
+					// TODO(hugo) : Fix infinite loop ?
+					u32 SocketReadyCount = SDLNet_CheckSockets(Sockets, 1000); // NOTE(hugo) : We wait 1s max
+					Assert(SocketReadyCount != -1);
+
+					// NOTE(hugo) : Receive messages
+					if(SocketReadyCount > 0)
+					{
+						if(SDLNet_SocketReady(ServerSocket))
+						{
+							// NOTE(hugo): 512 was dictated by the maximum size of a IRC message
+							// as specified in RFC 2812
+							char Text[512];
+
+							SDLNet_TCP_Recv(ServerSocket, Text, ArrayCount(Text));
+							printf("%s", Text);
+
+						}
+					}
+
+					// NOTE(hugo) : Send messages
+					if(!AuthentificationDone)
+					{
+						printf("Authentification...\r\n");
+						char* Message = "NICK Goo\r\nUSER Goo localhost 0 :Goo\r\n";
+						u32 Length = (u32)(StringLength(Message) + 1);
+						SDLNet_TCP_Send(ServerSocket, Message, Length);
+
+						AuthentificationDone = true;
+					}
+					else
+					{
+						if(!ChannelJoined)
+						{
+							char* Message = "JOIN #random\r\n";
+							u32 Length = StringLength(Message) + 1;
+							SDLNet_TCP_Send(ServerSocket, Message, Length);
+
+							ChannelJoined = true;
+						}
+					}
+				}
+			}
+			else
+			{
+				printf("Connection to server was unsuccessful...\n");
+			}
+			SDLNet_FreeSocketSet(Sockets);
+		}
+		else
+		{
+			printf("Socket Sets could not be created.\n");
+		}
+		SDLNet_TCP_Close(ServerSocket);
+	}
+	else
+	{
+		printf("Host was not resolved: %s", SDLNet_GetError());
+	}
+}
 
 int main(int ArgumentCount, char** Arguments)
 {
@@ -27,74 +145,16 @@ int main(int ArgumentCount, char** Arguments)
 
 		if((ArgumentCount >= 2) && (strcmp(Arguments[1], "-s") == 0))
 		{
-			// NOTE(hugo) : Server path
-			IPaddress Address;
-			s32 ResolveHostResult = SDLNet_ResolveHost(&Address, 0, 4000);
-			if(ResolveHostResult == 0)
-			{
-				TCPsocket ServerSocket = SDLNet_TCP_Open(&Address);
-				if(ServerSocket)
-				{
-					while(true)
-					{
-						TCPsocket ClientSocket = SDLNet_TCP_Accept(ServerSocket);
-						if(ClientSocket)
-						{
-#if 1
-							IPaddress* ClientIP = SDLNet_TCP_GetPeerAddress(ClientSocket);
-							Assert(ClientIP);
-							printf("A connection was established from client IP %#10x on port %d.\n", 
-									ClientIP->host, ClientIP->port);
-#endif
-
-							char* Text = "Hello, sailor!";
-							u32 Length = (u32)(strlen(Text) + 1);
-							SDLNet_TCP_Send(ClientSocket, Text, Length);
-							SDLNet_TCP_Close(ClientSocket);
-						}
-					}
-					SDLNet_TCP_Close(ServerSocket);
-				}
-				else
-				{
-					printf("TCP could not open: %s", SDLNet_GetError());
-				}
-			}
-			else
-			{
-				printf("Host was not resolved: %s", SDLNet_GetError());
-			}
+			Server();
 		}
 		else
 		{
 			if(ArgumentCount >= 2)
 			{
-				// NOTE(hugo) : Client path
 				char* Host = Arguments[1];
-				IPaddress HostAddress;
-				s32 ResolveHostResult = SDLNet_ResolveHost(&HostAddress, Host, 4000);
-				if(ResolveHostResult == 0)
-				{
-					TCPsocket ServerSocket = SDLNet_TCP_Open(&HostAddress);
-					if(ServerSocket)
-					{
-						printf("Connection to server was successful!\n");
-						char Text[1000];
-						while(SDLNet_TCP_Recv(ServerSocket, Text, ArrayCount(Text)))
-						{
-							printf("%s", Text);
-						}
-						SDLNet_TCP_Close(ServerSocket);
-					}
-					else
-					{
-						printf("Connection to server was unsuccessful...\n");
-					}
-				}
-				else
-				{
-					printf("Host was not resolved: %s", SDLNet_GetError());
-				}
+				u32 Port = 7666;
+				//u32 Port = 6667;
+				Client(Host, Port);
 			}
 			else
 			{
