@@ -1,7 +1,14 @@
 #define SDL_MAIN_HANDLED
+
+#ifdef _WIN32
 #include <SDL.h>
-#include <stdio.h>
 #include <SDL_net.h>
+#else
+#include <SDL2/SDL.h>
+#include <SDL/SDL_net.h>
+#endif
+
+#include <stdio.h>
 
 #include "rivten.h"
 
@@ -96,7 +103,12 @@ void Client(char* Host, u32 Port)
 					{
 						if(!ChannelJoined)
 						{
-							char* Message = "JOIN #random\r\n";
+							printf("--------Joining...\r\n");
+							printf("--------Joining...\r\n");
+							printf("--------Joining...\r\n");
+							printf("--------Joining...\r\n");
+							//char* Message = "JOIN #random\r\n";
+							char* Message = "LIST";
 							u32 Length = StringLength(Message) + 1;
 							SDLNet_TCP_Send(ServerSocket, Message, Length);
 
