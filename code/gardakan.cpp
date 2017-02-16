@@ -232,10 +232,10 @@ int main(int ArgumentCount, char** Arguments)
 		}
 		else
 		{
-			if(ArgumentCount >= 2)
+			if(ArgumentCount >= 3)
 			{
 				char* Host = Arguments[1];
-				u32 Port = 7666;
+				u32 Port = atoi(Arguments[2]);
 				//u32 Port = 6667;
 				Client(Host, Port);
 			}
