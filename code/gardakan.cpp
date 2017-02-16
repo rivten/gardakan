@@ -12,6 +12,8 @@
 
 #include "rivten.h"
 
+#include "multithreading.h"
+
 void Server(void)
 {
 	IPaddress Address;
@@ -52,6 +54,71 @@ void Server(void)
 	}
 }
 
+struct irc_message
+{
+	char Prefix[32];
+	char Command[32];
+	char Params[512];
+};
+
+struct irc_state
+{
+	char PartialLastMessage[512];
+	bool ReceivedUntreatedPartialMessage;
+};
+
+irc_message IRCParseMessage(char* MessageText)
+{
+	irc_message Result = {};
+	printf("%s\n", MessageText);
+
+	return(Result);
+}
+
+void IRCParsePacket(irc_state* IRCState, char* Text)
+{
+	u32 TextLength = StringLength(Text);
+	Assert(TextLength > 2);
+	bool FullMessage = ((Text[TextLength - 1] == '\n') && 
+			(Text[TextLength - 2] == '\r'));
+
+	char* Token = strtok(Text, "\r\n");
+	Assert(Token);
+
+	char* NextToken = strtok(0, "\r\n");
+
+	while(Token)
+	{
+		char MessageText[512];
+		if(IRCState->ReceivedUntreatedPartialMessage)
+		{
+			sprintf(MessageText, "%s%s", IRCState->PartialLastMessage,
+					Token);
+			IRCState->ReceivedUntreatedPartialMessage = false;
+		}
+		else
+		{
+			sprintf(MessageText, "%s", Token);
+		}
+
+		if(!NextToken && !FullMessage)
+		{
+			// NOTE(hugo) : The MessageText is the last one, and it is not a full message
+			sprintf(IRCState->PartialLastMessage, "%s", MessageText);
+			IRCState->ReceivedUntreatedPartialMessage = true;
+
+			Token = NextToken;
+		}
+		else
+		{
+			irc_message Message = IRCParseMessage(MessageText);
+
+			Token = NextToken;
+			NextToken = strtok(0, "\r\n");
+		}
+	}
+}
+
 void Client(char* Host, u32 Port)
 {
 	IPaddress HostAddress;
@@ -68,6 +135,8 @@ void Client(char* Host, u32 Port)
 				SDLNet_TCP_AddSocket(Sockets, ServerSocket);
 				bool AuthentificationDone = false;
 				bool ChannelJoined = false;
+				u32 AuthTick = 0;
+				irc_state IRCState = {};
 				while(true)
 				{
 					// TODO(hugo) : Fix infinite loop ?
@@ -84,8 +153,8 @@ void Client(char* Host, u32 Port)
 							char Text[512];
 
 							SDLNet_TCP_Recv(ServerSocket, Text, ArrayCount(Text));
-							printf("%s", Text);
-
+							IRCParsePacket(&IRCState, Text);
+							//printf("%i --- %s\n", MessageIndex, Message.Server);
 						}
 					}
 
@@ -98,10 +167,12 @@ void Client(char* Host, u32 Port)
 						SDLNet_TCP_Send(ServerSocket, Message, Length);
 
 						AuthentificationDone = true;
+						AuthTick = SDL_GetTicks();
 					}
 					else
 					{
-						if(!ChannelJoined)
+						u32 TicksSinceAuth = SDL_GetTicks() - AuthTick;
+						if((TicksSinceAuth > 1000) && (!ChannelJoined))
 						{
 							printf("--------Joining...\r\n");
 							printf("--------Joining...\r\n");

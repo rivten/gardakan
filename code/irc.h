@@ -16,6 +16,8 @@ enum irc_message_type
 struct irc_message
 {
 	irc_message_type Type;
+	char* ServerFrom;
+	u32 ResponseID;
 	char* Content[512];
 }
 
