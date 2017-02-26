@@ -67,10 +67,52 @@ struct irc_state
 	bool ReceivedUntreatedPartialMessage;
 };
 
+char* ClearIRCMessageString(char* Text)
+{
+	return(Text);
+}
+
 irc_message IRCParseMessage(char* MessageText)
 {
 	irc_message Result = {};
-	printf("%s\n", MessageText);
+	char* ClearedMessageText = ClearIRCMessageString(MessageText);
+	Assert(StringLength(ClearedMessageText) != 0);
+	bool HasPrefix = (ClearedMessageText[0] == ':');
+
+	char* Token = 0;
+	Token = strtok(ClearedMessageText, " :");
+	Assert(Token);
+	if(HasPrefix)
+	{
+		// NOTE(hugo) : Parse prefix
+		sprintf(Result.Prefix, "%s", Token);
+
+		// NOTE(hugo) : Parse command
+		Token = strtok(0, " ");
+		Assert(Token);
+		sprintf(Result.Command, "%s", Token);
+
+		// NOTE(hugo) : Parse params
+		Token = strtok(0, " ");
+		if(Token)
+		{
+			sprintf(Result.Params, "%s", Token);
+		}
+	}
+	else
+	{
+		// NOTE(hugo) : Parse command
+		sprintf(Result.Command, "%s", Token);
+
+		// NOTE(hugo) : Parse params
+		Token = strtok(0, " ");
+		if(Token)
+		{
+			sprintf(Result.Params, "%s", Token);
+		}
+	}
+
+	printf("%s -- %s\n", Result.Command, Result.Params);
 
 	return(Result);
 }
@@ -82,7 +124,9 @@ void IRCParsePacket(irc_state* IRCState, char* Text)
 	bool FullMessage = ((Text[TextLength - 1] == '\n') && 
 			(Text[TextLength - 2] == '\r'));
 
-	char* Token = strtok(Text, "\r\n");
+	//char* Token = strtok(Text, "\r\n");
+	char Token[512];
+	FindToken(Token, &Text, "\r\n");
 	Assert(Token);
 
 	char* NextToken = strtok(0, "\r\n");
@@ -107,14 +151,14 @@ void IRCParsePacket(irc_state* IRCState, char* Text)
 			sprintf(IRCState->PartialLastMessage, "%s", MessageText);
 			IRCState->ReceivedUntreatedPartialMessage = true;
 
-			Token = NextToken;
+			//Token = NextToken;
 		}
 		else
 		{
 			irc_message Message = IRCParseMessage(MessageText);
 
-			Token = NextToken;
-			NextToken = strtok(0, "\r\n");
+			//Token = NextToken;
+			//NextToken = strtok(0, "\r\n");
 		}
 	}
 }
@@ -236,7 +280,6 @@ int main(int ArgumentCount, char** Arguments)
 			{
 				char* Host = Arguments[1];
 				u32 Port = atoi(Arguments[2]);
-				//u32 Port = 6667;
 				Client(Host, Port);
 			}
 			else
