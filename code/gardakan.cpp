@@ -79,8 +79,9 @@ irc_message IRCParseMessage(char* MessageText)
 	Assert(StringLength(ClearedMessageText) != 0);
 	bool HasPrefix = (ClearedMessageText[0] == ':');
 
-	char* Token = 0;
-	Token = strtok(ClearedMessageText, " :");
+	//char* Token = 0;
+	char Token[512];
+	ConsumeToken(Token, &ClearedMessageText, " :");
 	Assert(Token);
 	if(HasPrefix)
 	{
@@ -88,12 +89,12 @@ irc_message IRCParseMessage(char* MessageText)
 		sprintf(Result.Prefix, "%s", Token);
 
 		// NOTE(hugo) : Parse command
-		Token = strtok(0, " ");
+		ConsumeToken(Token, &ClearedMessageText, " ");
 		Assert(Token);
 		sprintf(Result.Command, "%s", Token);
 
 		// NOTE(hugo) : Parse params
-		Token = strtok(0, " ");
+		ConsumeToken(Token, &ClearedMessageText, " ");
 		if(Token)
 		{
 			sprintf(Result.Params, "%s", Token);
@@ -105,7 +106,7 @@ irc_message IRCParseMessage(char* MessageText)
 		sprintf(Result.Command, "%s", Token);
 
 		// NOTE(hugo) : Parse params
-		Token = strtok(0, " ");
+		ConsumeToken(Token, &ClearedMessageText, " ");
 		if(Token)
 		{
 			sprintf(Result.Params, "%s", Token);
@@ -124,41 +125,54 @@ void IRCParsePacket(irc_state* IRCState, char* Text)
 	bool FullMessage = ((Text[TextLength - 1] == '\n') && 
 			(Text[TextLength - 2] == '\r'));
 
-	//char* Token = strtok(Text, "\r\n");
 	char Token[512];
-	FindToken(Token, &Text, "\r\n");
+	ConsumeToken(Token, &Text, "\r\n");
 	Assert(Token);
 
-	char* NextToken = strtok(0, "\r\n");
+	char NextToken[512];
+	ConsumeToken(NextToken, &Text, "\r\n");
 
-	while(Token)
+	while(StringLength(Token) > 0)
 	{
 		char MessageText[512];
 		if(IRCState->ReceivedUntreatedPartialMessage)
 		{
+			Assert(StringLength(IRCState->PartialLastMessage) + 
+					StringLength(Token) <= ArrayCount(MessageText));
 			sprintf(MessageText, "%s%s", IRCState->PartialLastMessage,
 					Token);
 			IRCState->ReceivedUntreatedPartialMessage = false;
 		}
 		else
 		{
+			Assert(StringLength(Token) <= ArrayCount(MessageText));
 			sprintf(MessageText, "%s", Token);
 		}
 
 		if(!NextToken && !FullMessage)
 		{
 			// NOTE(hugo) : The MessageText is the last one, and it is not a full message
+			Assert(StringLength(MessageText) <= ArrayCount(IRCState->PartialLastMessage));
 			sprintf(IRCState->PartialLastMessage, "%s", MessageText);
 			IRCState->ReceivedUntreatedPartialMessage = true;
 
-			//Token = NextToken;
+			//CopyArray(Token, NextToken, u8, ArrayCount(Token));
 		}
 		else
 		{
 			irc_message Message = IRCParseMessage(MessageText);
 
-			//Token = NextToken;
-			//NextToken = strtok(0, "\r\n");
+			if(StringLength(NextToken) > 0)
+			{
+				Assert(ArrayCount(NextToken) <= ArrayCount(Token));
+				CopyArray(Token, NextToken, char, ArrayCount(Token));
+				ConsumeToken(NextToken, &Text, "\r\n");
+			}
+			else
+			{
+				// TODO(hugo) : This is a ugly hack
+				Token[0] = '\0';
+			}
 		}
 	}
 }
@@ -198,7 +212,6 @@ void Client(char* Host, u32 Port)
 
 							SDLNet_TCP_Recv(ServerSocket, Text, ArrayCount(Text));
 							IRCParsePacket(&IRCState, Text);
-							//printf("%i --- %s\n", MessageIndex, Message.Server);
 						}
 					}
 
