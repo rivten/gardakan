@@ -56,14 +56,14 @@ void Server(void)
 
 struct irc_message
 {
-	char Prefix[32];
-	char Command[32];
-	char Params[512];
+	rvtn_string Prefix;
+	rvtn_string Command;
+	rvtn_string Params;
 };
 
 struct irc_state
 {
-	char PartialLastMessage[512];
+	rvtn_string PartialLastMessage;
 	bool ReceivedUntreatedPartialMessage;
 };
 
@@ -72,6 +72,7 @@ char* ClearIRCMessageString(char* Text)
 	return(Text);
 }
 
+#if 0
 irc_message IRCParseMessage(char* MessageText)
 {
 	irc_message Result = {};
@@ -176,6 +177,52 @@ void IRCParsePacket(irc_state* IRCState, char* Text)
 		}
 	}
 }
+#endif
+
+irc_message IRCParseMessage(rvtn_string Message)
+{
+	irc_message Result = {};
+	return(Result);
+}
+
+void IRCParsePacket(irc_state* IRCState, rvtn_string Packet)
+{
+	Assert(Packet.Size > 2);
+
+	rvtn_string IRCMessageDelimiter = CreateString("\r\n");
+	rvtn_string Message = {};
+
+	bool FullPacket = StringEndsWith(Packet, IRCMessageDelimiter);
+	bool IsLastMessage = false;
+	do
+	{
+		consume_token_result TokenConsumed = ConsumeToken(Packet, IRCMessageDelimiter);
+		FreeString(&Message);
+		Message = TokenConsumed.Token;
+		FreeString(&Packet);
+		Packet = TokenConsumed.Remain;
+
+		if(IRCState->PartialLastMessage.Size > 0)
+		{
+			rvtn_string TempMessage = ConcatString(IRCState->PartialLastMessage, Message);
+			FreeString(&IRCState->PartialLastMessage);
+			FreeString(&Message);
+			Message = TempMessage;
+		}
+		IsLastMessage = !IsSubstring(IRCMessageDelimiter, Packet);
+		if((!IsLastMessage) || FullPacket)
+		{
+			IRCParseMessage(Message);
+		}
+		else // NOTE(hugo) : IsLastMessage && (!FullPacket)
+		{
+			IRCState->PartialLastMessage = CreateString(Packet);
+			FreeString(&Packet);
+		}
+		FreeString(&Message);
+	} while(Packet.Size > 0);
+
+}
 
 void Client(char* Host, u32 Port)
 {
@@ -211,7 +258,8 @@ void Client(char* Host, u32 Port)
 							char Text[512];
 
 							SDLNet_TCP_Recv(ServerSocket, Text, ArrayCount(Text));
-							IRCParsePacket(&IRCState, Text);
+							rvtn_string Packet = CreateString(Text);
+							IRCParsePacket(&IRCState, Packet);
 						}
 					}
 
