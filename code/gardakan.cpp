@@ -64,7 +64,8 @@ struct irc_message
 struct irc_state
 {
 	rvtn_string PartialLastMessage;
-	bool ReceivedUntreatedPartialMessage;
+
+	memory_arena Arena;
 };
 
 char* ClearIRCMessageString(char* Text)
@@ -72,157 +73,55 @@ char* ClearIRCMessageString(char* Text)
 	return(Text);
 }
 
-#if 0
-irc_message IRCParseMessage(char* MessageText)
+irc_message IRCParseMessage(rvtn_string Message, memory_arena* Arena = 0)
 {
 	irc_message Result = {};
-	char* ClearedMessageText = ClearIRCMessageString(MessageText);
-	Assert(StringLength(ClearedMessageText) != 0);
-	bool HasPrefix = (ClearedMessageText[0] == ':');
 
-	//char* Token = 0;
-	char Token[512];
-	ConsumeToken(Token, &ClearedMessageText, " :");
-	Assert(Token);
-	if(HasPrefix)
-	{
-		// NOTE(hugo) : Parse prefix
-		sprintf(Result.Prefix, "%s", Token);
+	rvtn_string Delimiter = CreateString(" ", Arena);
+	consume_token_result Consumed = ConsumeToken(Message, Delimiter, Arena);
 
-		// NOTE(hugo) : Parse command
-		ConsumeToken(Token, &ClearedMessageText, " ");
-		Assert(Token);
-		sprintf(Result.Command, "%s", Token);
+	Result.Prefix = Consumed.Token;
+	Message = Consumed.Remain;
 
-		// NOTE(hugo) : Parse params
-		ConsumeToken(Token, &ClearedMessageText, " ");
-		if(Token)
-		{
-			sprintf(Result.Params, "%s", Token);
-		}
-	}
-	else
-	{
-		// NOTE(hugo) : Parse command
-		sprintf(Result.Command, "%s", Token);
+	Consumed = ConsumeToken(Message, Delimiter, Arena);
+	Result.Command = Consumed.Token;
+	Result.Params = Consumed.Remain;
 
-		// NOTE(hugo) : Parse params
-		ConsumeToken(Token, &ClearedMessageText, " ");
-		if(Token)
-		{
-			sprintf(Result.Params, "%s", Token);
-		}
-	}
-
-	printf("%s -- %s\n", Result.Command, Result.Params);
+	Print(Result.Params);
 
 	return(Result);
 }
 
-void IRCParsePacket(irc_state* IRCState, char* Text)
-{
-	u32 TextLength = StringLength(Text);
-	Assert(TextLength > 2);
-	bool FullMessage = ((Text[TextLength - 1] == '\n') && 
-			(Text[TextLength - 2] == '\r'));
-
-	char Token[512];
-	ConsumeToken(Token, &Text, "\r\n");
-	Assert(Token);
-
-	char NextToken[512];
-	ConsumeToken(NextToken, &Text, "\r\n");
-
-	while(StringLength(Token) > 0)
-	{
-		char MessageText[512];
-		if(IRCState->ReceivedUntreatedPartialMessage)
-		{
-			Assert(StringLength(IRCState->PartialLastMessage) + 
-					StringLength(Token) <= ArrayCount(MessageText));
-			sprintf(MessageText, "%s%s", IRCState->PartialLastMessage,
-					Token);
-			IRCState->ReceivedUntreatedPartialMessage = false;
-		}
-		else
-		{
-			Assert(StringLength(Token) <= ArrayCount(MessageText));
-			sprintf(MessageText, "%s", Token);
-		}
-
-		if(!NextToken && !FullMessage)
-		{
-			// NOTE(hugo) : The MessageText is the last one, and it is not a full message
-			Assert(StringLength(MessageText) <= ArrayCount(IRCState->PartialLastMessage));
-			sprintf(IRCState->PartialLastMessage, "%s", MessageText);
-			IRCState->ReceivedUntreatedPartialMessage = true;
-
-			//CopyArray(Token, NextToken, u8, ArrayCount(Token));
-		}
-		else
-		{
-			irc_message Message = IRCParseMessage(MessageText);
-
-			if(StringLength(NextToken) > 0)
-			{
-				Assert(ArrayCount(NextToken) <= ArrayCount(Token));
-				CopyArray(Token, NextToken, char, ArrayCount(Token));
-				ConsumeToken(NextToken, &Text, "\r\n");
-			}
-			else
-			{
-				// TODO(hugo) : This is a ugly hack
-				Token[0] = '\0';
-			}
-		}
-	}
-}
-#endif
-
-irc_message IRCParseMessage(rvtn_string Message)
-{
-	irc_message Result = {};
-	Print(Message);
-	return(Result);
-}
-
-void IRCParsePacket(irc_state* IRCState, rvtn_string Packet)
+void IRCParsePacket(irc_state* IRC, rvtn_string Packet)
 {
 	Assert(Packet.Size > 2);
 
-	rvtn_string IRCMessageDelimiter = CreateString("\r\n");
+	rvtn_string IRCMessageDelimiter = CreateString("\r\n", &IRC->Arena);
 	rvtn_string Message = {};
 
 	bool FullPacket = StringEndsWith(Packet, IRCMessageDelimiter);
 	bool IsLastMessage = false;
 	do
 	{
-		consume_token_result TokenConsumed = ConsumeToken(Packet, IRCMessageDelimiter);
-		FreeString(&Message);
+		consume_token_result TokenConsumed = ConsumeToken(Packet, IRCMessageDelimiter, &IRC->Arena);
 		Message = TokenConsumed.Token;
-		FreeString(&Packet);
 		Packet = TokenConsumed.Remain;
 
-		if(IRCState->PartialLastMessage.Size > 0)
+		if(IRC->PartialLastMessage.Size > 0)
 		{
-			rvtn_string TempMessage = ConcatString(IRCState->PartialLastMessage, Message);
-			FreeString(&IRCState->PartialLastMessage);
-			FreeString(&Message);
-			Message = TempMessage;
+			Message = ConcatString(IRC->PartialLastMessage, Message, &IRC->Arena);
+			FreeString(&IRC->PartialLastMessage);
 		}
-		IsLastMessage = !IsSubstring(IRCMessageDelimiter, Packet);
-		if((!IsLastMessage) || FullPacket)
-		{
-			IRCParseMessage(Message);
-		}
-		else // NOTE(hugo) : IsLastMessage && (!FullPacket)
-		{
-			IRCState->PartialLastMessage = CreateString(Packet);
-			FreeString(&Packet);
-		}
-		FreeString(&Message);
-	} while(Packet.Size > 0);
 
+		IRCParseMessage(Message, &IRC->Arena);
+
+		IsLastMessage = !IsSubstring(IRCMessageDelimiter, Packet);
+		if(IsLastMessage && (!FullPacket))
+		{
+			IRC->PartialLastMessage = CreateString(Packet);
+		}
+
+	} while((Packet.Size > 0) && (IRC->PartialLastMessage.Size == 0));
 }
 
 void Client(char* Host, u32 Port)
@@ -242,7 +141,13 @@ void Client(char* Host, u32 Port)
 				bool AuthentificationDone = false;
 				bool ChannelJoined = false;
 				u32 AuthTick = 0;
+
+				// NOTE(hugo) : Initializing memory for arena
+				u64 MemoryStorageSize = Megabytes(512);
+				void* MemoryStorage = Allocate_(MemoryStorageSize);
+
 				irc_state IRCState = {};
+				InitializeArena(&IRCState.Arena, MemoryStorageSize, MemoryStorage);
 				while(true)
 				{
 					// TODO(hugo) : Fix infinite loop ?
@@ -259,8 +164,11 @@ void Client(char* Host, u32 Port)
 							char Text[512];
 
 							SDLNet_TCP_Recv(ServerSocket, Text, ArrayCount(Text));
-							rvtn_string Packet = CreateString(Text);
+
+							temporary_memory TempMemory = BeginTemporaryMemory(&IRCState.Arena);
+							rvtn_string Packet = CreateString(Text, &IRCState.Arena);
 							IRCParsePacket(&IRCState, Packet);
+							EndTemporaryMemory(TempMemory);
 						}
 					}
 
