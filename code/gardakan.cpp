@@ -182,6 +182,7 @@ void IRCParsePacket(irc_state* IRCState, char* Text)
 irc_message IRCParseMessage(rvtn_string Message)
 {
 	irc_message Result = {};
+	Print(Message);
 	return(Result);
 }
 
