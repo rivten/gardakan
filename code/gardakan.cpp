@@ -14,6 +14,16 @@
 
 #include "multithreading.h"
 
+/*
+  TODO(hugo) : 
+	* better architecture for the main loop of the client program / refacto
+	* fix registration on some servers
+	* properly do the parsing of commands
+	* types/enum for command
+	* ability to send command to the client (and he should respond to these commands, such as !time)
+	* UI (imgui ?)
+ */
+
 void Server(void)
 {
 	IPaddress Address;
@@ -68,11 +78,6 @@ struct irc_state
 	memory_arena Arena;
 };
 
-char* ClearIRCMessageString(char* Text)
-{
-	return(Text);
-}
-
 irc_message IRCParseMessage(rvtn_string Message, memory_arena* Arena = 0)
 {
 	irc_message Result = {};
@@ -122,6 +127,12 @@ void IRCParsePacket(irc_state* IRC, rvtn_string Packet)
 		}
 
 	} while((Packet.Size > 0) && (IRC->PartialLastMessage.Size == 0));
+}
+
+void SendMessageToSocket(TCPsocket Socket, const char* Message)
+{
+	u32 Length = (u32)(StringLength(Message));
+	SDLNet_TCP_Send(Socket, Message, Length);
 }
 
 void Client(char* Host, u32 Port)
@@ -176,19 +187,9 @@ void Client(char* Host, u32 Port)
 					// NOTE(hugo) : Send messages
 					if(!AuthentificationDone)
 					{
-						char* CAPLSMessage = "CAP LS\r\n";
-						u32 CAPLSLength = (u32)(StringLength(CAPLSMessage));
-						SDLNet_TCP_Send(ServerSocket, CAPLSMessage, CAPLSLength);
-
-						char* Nickname = "Goo";
+						SendMessageToSocket(ServerSocket, "CAP LS\r\n");
 						printf("Authentification...\r\n");
-						//char Message[512] = {};
-						//char* Message = "NICK Goo\r\nUSER Goo localhost 0 :Goo\r\n";
-						//sprintf(Message, "NICK %s\r\nUSER hugo hugo irc.handmade.network :%s\r\n", Nickname, Nickname);
-						char* Message ="NICK rivten2\r\nUSER hugo hugo irc.handmade.network :rivten_grey\r\n";
-						u32 Length = (u32)(StringLength(Message));
-						SDLNet_TCP_Send(ServerSocket, Message, Length);
-
+						SendMessageToSocket(ServerSocket, "NICK rivten2\r\nUSER hugo hugo irc.handmade.network :rivten_grey\r\n");
 						AuthentificationDone = true;
 						AuthTick = SDL_GetTicks();
 					}
@@ -199,34 +200,19 @@ void Client(char* Host, u32 Port)
 						if((MSSinceAuth > (u32)(MSToJoin / 4)) && (!ModeSent))
 						{
 							printf("Sending MODE\n");
-							char* PingMessage = "MODE rivten2 +i\r\n";
-							u32 PingLength = StringLength(PingMessage);
-							SDLNet_TCP_Send(ServerSocket, PingMessage, PingLength);
+							SendMessageToSocket(ServerSocket, "MODE rivten2 +i\r\n");
 							ModeSent = true;
 						}
 						if((MSSinceAuth > (u32)(MSToJoin / 2)) && (!PingSent))
 						{
 							printf("Sending PING\n");
-							char* PingMessage = "PING irc.handmade.network\r\n";
-							u32 PingLength = StringLength(PingMessage);
-							SDLNet_TCP_Send(ServerSocket, PingMessage, PingLength);
+							SendMessageToSocket(ServerSocket, "PING irc.handmade.network\r\n");
 							PingSent = true;
 						}
 						if((MSSinceAuth > MSToJoin) && (!ChannelJoined))
 						{
-							//char* PingMessage = "PING irc.handmade.network";
-							//u32 PingLength = StringLength(PingMessage) + 1;
-							//SDLNet_TCP_Send(ServerSocket, PingMessage, PingLength);
-
 							printf("--------Joining...\r\n");
-							printf("--------Joining...\r\n");
-							printf("--------Joining...\r\n");
-							printf("--------Joining...\r\n");
-							char* Message = "JOIN #random\r\n";
-							//char* Message = "LIST";
-							u32 Length = StringLength(Message);
-							SDLNet_TCP_Send(ServerSocket, Message, Length);
-
+							SendMessageToSocket(ServerSocket, "JOIN #random\r\n");
 							ChannelJoined = true;
 						}
 					}
