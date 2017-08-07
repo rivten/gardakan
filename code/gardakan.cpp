@@ -5,7 +5,7 @@
 #include <SDL_net.h>
 #else
 #include <SDL2/SDL.h>
-#include <SDL/SDL_net.h>
+#include <SDL2/SDL_net.h>
 #endif
 
 #include <stdio.h>
